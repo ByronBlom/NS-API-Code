@@ -7,15 +7,16 @@ app = Flask(__name__)
 def hello_world(): # this is the home page function that generates the page code
     return "Hello world!"
 
-# connecting to webhook - remember to connect DialogFlow to           Fullfilment.
-# i work with different if and elif statements. Each elif statement calls a parameter assigned to a specific intent in DialogFlow.
+# connecting to webhook - remember to connect DialogFlow to Fullfilment.
+# I work with different if and elif statements. Each elif statement calls a parameter assigned to a specific intent in DialogFlow.
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
   req = request.get_json(silent=True, force=True)
   fulfillmentText = ''
   import http.client, urllib.request, urllib.parse, urllib.error, base64
   query_result = req.get('queryResult')
-  if query_result.get('action') == 'add.numbers': #<- This is the name of the action parameter for the intent in DialogFlow
+  if query_result.get('action') == 'add.numbers': # <- this is the name of the action parameter for the intent in DialogFlow
     num1 = int(query_result.get('parameters').get('number')) # get action parameter from specific intent (num1 & num2)
     num2 = int(query_result.get('parameters').get('number1'))
     
