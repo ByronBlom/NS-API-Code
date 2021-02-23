@@ -1,5 +1,5 @@
 # Copyright© 2020 Byron Blom for NS
-# This is a webhook designed for Dialogflow
+# This is a webhook designed for DialogFlow
 from flask import Flask, request
 app = Flask(__name__)
 
@@ -7,34 +7,124 @@ app = Flask(__name__)
 def hello_world(): # this is the home page function that generates the page code
     return "Hello world!"
 
-# connecting to webhook - remember to connect DialogFlow to Fullfilment.
+# connecting to webhook - remember to connect DialogFlow to           Fullfilment.
 # I work with different if and elif statements. Each elif statement calls a parameter assigned to a specific intent in DialogFlow.
-
 @app.route('/webhook', methods=['POST'])
 def webhook():
   req = request.get_json(silent=True, force=True)
   fulfillmentText = ''
   import http.client, urllib.request, urllib.parse, urllib.error, base64
   query_result = req.get('queryResult')
-  if query_result.get('action') == 'add.numbers': # <- this is the name of the action parameter for the intent in DialogFlow
+
+  #---------------------------------------------------------------------#
+  if query_result.get('action') == 'add.numbers': #<- This is the name of the action parameter for the intent in DialogFlow
     num1 = int(query_result.get('parameters').get('number')) # get action parameter from specific intent (num1 & num2)
     num2 = int(query_result.get('parameters').get('number1'))
     
     sum = str(num1 + num2) # create simple formula to sum the parameters
-    print('here num1 = {0}'.format(num1))
-    print('here num2 = {0}'.format(num2))
-    fulfillmentText = str(num1)+" plus "+str(num2)+" is "+sum # always define fulfillmentText, it is the output in DialogFlow
 
-    # new function
+    fulfillmentText =  str(num1)+" plus "+str(num2)+ " is " + sum # always define fulfillmentText, it is the output in DialogFlow
+
+   #---------------------------------------------------------------------#
   elif query_result.get('action') == 'multiply.numbers':
     num1 = int(query_result.get('parameters').get('number'))
     num2 = int(query_result.get('parameters').get('number1'))
     product = str(num1 * num2) # instead of summing the parameters, it now multiplies them
-    print('here num1 = {0}'.format(num1))
-    print('here num2 = {0}'.format(num2))
-    fulfillmentText = str(num1)+" maal "+str(num2)+" is "+product
+    
+    fulfillmentText = str(num1) + " maal " + str(num2)+ " is " + product
+   #---------------------------------------------------------------------#
+   # Context from departure times to ticket price second class
+  elif query_result.get('action') == 'ns.runner':
+
+    num1 = query_result.get('parameters').get('kostengeo-city')
+    num2 = query_result.get('parameters').get('kostengeo-city1')
+    num1 = str(num1)
+    num2 = str(num2)
+    
+    import http.client, urllib.request, urllib.parse, urllib.error, base64
+
+    headers = {
+    # request headers
+    'Ocp-Apim-Subscription-Key': '20478f19bbcc411b8e06d306ba760129',
+    }
+
+    params = urllib.parse.urlencode({
+    # request parameters
+    'fromStation': num1,
+    'toStation': num2,
+    })
+
+    try:
+      conn = http.client.HTTPSConnection('gateway.apiportal.ns.nl')
+      conn.request("GET", "/rio-price-information-api/prices?%s" % params, "{body}", headers)
+      response = conn.getresponse()
+      data = response.read()
+    
+      conn.close()
+      data = str(data)
+      start2 = data.find('"SINGLE_FARE","price":') + 22 # find price single fare ticket second class
+      end2 = data.find(',"supplements"', start2)
+      price2 = data[start2:end2]
+    
+      # find single fare price first class
+      start1 = data.find('"FIRST","discountType":"NONE","productType":"SINGLE_FARE","price":') + 66
+      end1 = data.find(',"supplements":{}},{"classType":"SECOND"') 
+      price1 = data[start1:end1] # price single fare ticket first class
+      price2 = int(price2)
+      
+      single_ticket = round((int(price2)/100),1) # single fare ticket second class
+      single_ticket40 = round(((int(price2)/100)*0.6),1) # ticket with discount second class
+      return_ticket = round(((int(price2)/100)*2),1) # return ticket price second class
+    
+      
+      fulfillmentText = "De prijs voor een enkeltje in klas 2 van " +num1 + " naar " + num2 + " kost " + str(single_ticket) +" euro," + " een enkeltje met 40 procent korting kost " + str(single_ticket40) + " euro " + ", en een retourtje in klas 2 kost " + str(return_ticket) + " euro"
+
+
+    except Exception as e:
+         print("[Errno {0}] {1}".format(e.errno, e.strerror))
+
+    
+
+
+
+   #---------------------------------------------------------------------#
+   # Retrieve actual weather
+
+  elif query_result.get('action') == 'ns.weer':
+
+    num1 = query_result.get('parameters').get('geo-city')
+    from py_weernl import weerLive
+
+    place = str(num1)
+    my_api = ["f0c94a983e"]
+    w = weerLive(api=my_api)
+
+    data = w.getData(place)
+    data = str(data)
+
+    location_start = data.find("plaats':") + 10
+    location_end = data.find("', 'temp'", location_start)
+    location = data[location_start:location_end]
+
+    temp_start = data.find("'temp':") + 9
+    temp_end = data.find("', 'gtemp':", temp_start)
+    temperature = data[temp_start:temp_end]
+
+    status_start = data.find("'samenv':") + 11
+    status_end = data.find("', 'lv':", status_start)
+    status = data[status_start:status_end]
+    status = status.lower()
+
+    wind_start = data.find("'windkmh':") + 12
+    wind_end = data.find("', 'luchtd'", wind_start)
+    wind = data[wind_start:wind_end]
+
+
+    fulfillmentText = "De temperatuur in " + str(location) + " is momenteel " + str(temperature) + " graden. " + " Daarbij " + str(status) + " met windsnelheden van " + str(wind) + " kilometer per uur."
   
-    # new function - NS.Tijden - it calls the following five departure times from station to station
+   #---------------------------------------------------------------------#
+   # Retrieve departure times and associated tracks
+   
   elif query_result.get('action') == 'ns.tijden':
     
     num1 = (query_result.get('parameters').get('geo-city'))
@@ -55,6 +145,7 @@ def webhook():
     # request parameters
     'fromStation': num1,
     'toStation': num2,
+    'searchForArrival': 'False',
     
     })
 
@@ -63,44 +154,207 @@ def webhook():
       conn.request("GET", "/reisinformatie-api/api/v3/trips?%s" % params, "{body}", headers)
       response = conn.getresponse()
       data = response.read()
-      data = str(data) # convert to string
-   
+      data = str(data)
     
-      data = data.replace("-","").replace(":","") # replace some characters to retrieve a whole string
-      tuples = re.findall('\\bplannedFromTime=\w+\\b', data) # find all departure data
     
-      new1 = []    
-      for tup in tuples:
-        tup = tup.replace("plannedFromTime=","") # remove text, only keep numeric data
-        tup = tup[9:13] # remove date and only keep the time
-        l = int(len(tup)/2) # split hour and minutes
-        a,b = tup[:l],tup[l:]
-    
-        new1.append(a+":"+b) #append collon between hour and minutes
-      x1=[]
-      x2=[]
-      x3=[]
-      x4=[]
-      x5=[]
-      newlist = sorted(set(new1), key=lambda x:new1.index(x)) # assign departure times to variables
-      for i in newlist[1:2]:
-        x1.append(i)
-      for i in newlist[2:3]:
-        x2.append(i)
-      for i in newlist[3:4]:
-        x3.append(i)
-      for i in newlist[4:5]:
-        x4.append(i)
-      for i in newlist[5:6]:
-        x5.append(i)
+      data = data.replace("-","").replace(":","")
+      tuples = re.findall('\\bplannedFromTime=\w+\\b', data) 
+      tuples1 = tuples
+  
+      sp0 = []
+      sentence = data
+      word = "fareLegs"
+      for match in re.finditer(word, sentence):
+        sp0.append(match.end())
+        
 
-      fulfillmentText = "De eerstvolgende vertrektijden van station " + num1 + " naar station " + num2 + " zijn: " + ''.join(x1) +" ,"+ ''.join(x2) + " ,"+ ''.join(x3) + " ,"+ ''.join(x4) + " en " + ''.join(x5) # create output for DialogFlow
+        
+      x1 = data[(sp0[0]):((sp0[0])+3400)] 
+
+      start_x1 = x1.find(',"transfers"') + 12 # Transfer number
+      eind_x1 = x1.find(',"status""', start_x1)
+      overstap1 = x1[start_x1:eind_x1]
+      
+      if "actualTrack" in x1:
+        
+        start1 = x1.find('actualTrack""') + 13
+        end1 = x1.find('","chec', start1)
+        spoor1 = x1[start1:end1]
+      else:
+        start1 = x1.find('plannedTrack""') + 14
+        end1 = x1.find('","chec', start1)
+        spoor1 = x1[start1:end1]
     
+    #
+    
+      x2 = data[(sp0[1]):((sp0[1])+3400)]
+
+      start_x2 = x2.find(',"transfers"') + 12 # Transfer number
+      eind_x2 = x2.find(',"status""', start_x2)
+      overstap2 = x2[start_x2:eind_x2]
+
+      if "actualTrack" in x2:
+        
+        start2 = x2.find('actualTrack""') + 13
+        end2 = x2.find('","chec', start2)
+        spoor2 = x2[start2:end2]
+      else:
+        start2 = x2.find('plannedTrack""') + 14
+        end2 = x2.find('","chec', start2)
+        spoor2 = x2[start2:end2]
+
+    #
+
+    #
+    
+      x3 = data[(sp0[2]):((sp0[2])+3400)]
+
+      start_x3 = x3.find(',"transfers"') + 12 # Transfer number
+      eind_x3 = x3.find(',"status""', start_x3)
+      overstap3 = x3[start_x3:eind_x3]
+
+      if "actualTrack" in x3:
+        
+        start3 = x3.find('actualTrack""') + 13
+        end3 = x3.find('","chec', start3)
+        spoor3 = x3[start3:end3]
+      else:
+        start3 = x3.find('plannedTrack""') + 14
+        end3 = x3.find('","chec', start3)
+        spoor3 = x3[start3:end3]
+    
+    #
+    
+      x4 = data[(sp0[3]):((sp0[3])+3400)]
+
+      start_x4 = x4.find(',"transfers"') + 12 # Transfer number
+      eind_x4 = x4.find(',"status""', start_x4)
+      overstap4 = x4[start_x4:eind_x4]
+
+      if "actualTrack" in x4:
+        
+        start4 = x4.find('actualTrack""') + 13
+        end4 = x4.find('","chec', start4)
+        spoor4 = x4[start4:end4]
+      else:
+        start4 = x4.find('plannedTrack""') + 14
+        end4 = x4.find('","chec', start4)
+        spoor4 = x4[start4:end4]
+
+    #
+    
+      x5 = data[(sp0[4]):((sp0[4])+3400)]
+
+      start_x5 = x5.find(',"transfers"') + 12 # Transfer number
+      eind_x5 = x5.find(',"status""', start_x5)
+      overstap5 = x5[start_x5:eind_x5]
+
+      if "actualTrack" in x5:
+        
+        start5 = x5.find('actualTrack""') + 13
+        end5 = x5.find('","chec', start5)
+        spoor5 = x5[start5:end5]
+      else:
+        start5 = x5.find('plannedTrack""') + 14
+        end5 = x5.find('","chec', start5)
+        spoor5 = x5[start5:end5]
+    
+    #
+        
+      x6 = data[(sp0[5]):((sp0[5])+3400)]
+      if "actualTrack" in x6:
+        
+        start6 = x6.find('actualTrack""') + 13
+        end6 = x6.find('","chec', start6)
+        spoor6 = x6[start6:end6]
+      else:
+        start6 = x6.find('plannedTrack""') + 14
+        end6 = x6.find('","chec', start6)
+        spoor6 = x6[start6:end6]
+        
+      
+      #
+    
+      new2 = [] 
+      new3 = []
+      for tup in tuples1:
+        if tup not in new2:
+            new2.append(tup)
+      for tup in new2:  
+        
+        tup = tup.replace("plannedFromTime=","")
+        tup = tup[9:13]
+        l = int(len(tup)/2)
+        a,b = tup[:l],tup[l:]
+        new3.append(a+":"+b)
+    
+      y0=[]
+      y1=[]
+      y2=[]
+      y3=[]
+      y4=[]
+      y5=[]
+
+
+    #
+      newlist = sorted(set(new3), key=lambda x:new3.index(x))
+    
+      for i in newlist[0:1]:
+         y0.append(i)
+      for i in newlist[1:2]:
+         y1.append(i)
+      for i in newlist[2:3]:
+         y2.append(i)
+      for i in newlist[3:4]:
+         y3.append(i)
+      for i in newlist[4:5]:
+         y4.append(i)
+      for i in newlist[5:6]:
+         y5.append(i)
+      
+      t0 = (''.join(y0))
+      t0 = t0.replace(":","")
+      x0 = data.find(t0)
+
+      data1 = data[x0:(x0+1000)]
+      if "actualTrack" in data1:
+        
+        start0 = data1.find('actualTrack""') + 13
+        end0 = data1.find('","chec', start0)
+        spoor0 = data1[start0:end0]
+      else:
+        start0 = data1.find('plannedTrack""') + 14
+        end0 = data1.find('","chec', start0)
+        spoor0 = data1[start0:end0]
+       
+      
+      if spoor1 == spoor2 and spoor1 == spoor3 and spoor1 == spoor4 and spoor1 == spoor5 and spoor1 == spoor0 and overstap1 == overstap2 and overstap2 == overstap3 and overstap3 == overstap4 and overstap4 == overstap5:
+        fulfillmentText = "De eerstvolgende vertrektijden van station " + num1 + " naar station " + num2 + " zijn: " + " om " + ''.join(y0) + ", om " + ''.join(y1) + ", om " + ''.join(y2) + ", om " + ''.join(y3)+ ", om "+ ''.join(y4) + ". Alle treinen vertrekken vanaf spoor " + str(spoor1) +", u hoeft " + str(overstap1) + " keer over te stappen."
+
+      
+
+       
+      elif spoor1 != spoor2 or spoor1 != spoor3 or spoor1 != spoor4 or spoor1 != spoor5 or spoor1 != spoor0 and overstap1 == overstap2 and overstap2 == overstap3 and overstap3 == overstap4 and overstap4 == overstap5:
+        fulfillmentText = "De eerstvolgende vertrektijden van station " + num1 + " naar station " + num2 + " zijn: " + " om " + ''.join(y0) + " vanaf spoor  " + str(spoor0) + ", om " + ''.join(y1) + " vanaf spoor " + str(spoor1) +  ", om " + ''.join(y2) + " vanaf spoor " + str(spoor2) + ", om " + ''.join(y3) + " vanaf spoor " + str(spoor3) + ", en om " + ''.join(y4) + " vanaf spoor " + str(spoor4) + ". U hoeft " + str(overstap1) + " keer over te stappen."
+
+      elif (spoor1 != spoor2 or spoor1 != spoor3 or spoor1 != spoor4 or spoor1 != spoor5 or spoor1 != spoor0) and (overstap1 != overstap2 or overstap2 != overstap3 or overstap3 != overstap4 or overstap4 != overstap5):
+        fulfillmentText = "De eerstvolgende vertrektijden van station " + num1 + " naar station " + num2 + " zijn: " + " om " + ''.join(y0) + " vanaf spoor  " + str(spoor0) + "(overstap " + str(overstap1) + " keer)" + ", om " + ''.join(y1) + " vanaf spoor " + str(spoor1) + "(overstap " + str(overstap2) + " keer)" + ", om " + ''.join(y2) + " vanaf spoor " + str(spoor2) + "(overstap " +str(overstap3)+" keer)" + ", om " + ''.join(y3) + " vanaf spoor " + str(spoor3) + "(overstap "+str(overstap4)+" keer)" +", en om " + ''.join(y4) + " vanaf spoor " + str(spoor4) 
+
+
+     
+      #else: 
+          #fulfillmentText = "De eerstvolgende vertrektijden van station " + num1 + " naar station " + num2 + " zijn: " + " om " + ''.join(y0) + " vanaf spoor  " + str(spoor0) + "(overstap " + str(overstap1) + " keer)" + ", om " + ''.join(y1) + " vanaf spoor " + str(spoor1) + "(overstap " + str(overstap2) + " keer)" + ", om " + ''.join(y2) + " vanaf spoor " + str(spoor2) + "(overstap " +str(overstap3)+" keer)" + ", om " + ''.join(y3) + " vanaf spoor " + str(spoor3) + "(overstap "+str(overstap4)+" keer)" +", en om " + ''.join(y4) + " vanaf spoor " + str(spoor4) 
+       
+       
+    
+
       conn.close()
     except Exception as e:
       print("[Errno {0}] {1}".format(e.errno, e.strerror))
 
-  # new function - NS.OV-Fiets
+   #---------------------------------------------------------------------#
+   # Retrieve public transport bicycle information
+
   elif query_result.get('action') == 'ns.ov-fiets': 
     num1 = (query_result.get('parameters').get('geo-city')) # get city from intent
     import http.client, urllib.request, urllib.parse, urllib.error, base64
@@ -110,7 +364,7 @@ def webhook():
     "Almm":"Almere Muziekwijk","Almo":"Almere Oostvaarders","Almp":"Almere Parkwijk","Amf":"Amersfoort",
     "Amfs":"Amersfoort Schothorst","Aml":"Almelo","Ampo":"Almere Poort","Amr":"Alkmaar","Amri":"Almelo De Riet","Amrn":"Alkmaar Noord",
     "Ana":"Anna Paulowna","Apd":"Apeldoorn","Apdm":"Apeldoorn De Maten","Apdo":"Apeldoorn Osseveld","Apg":"Appingedam",
-    "Apn":"Alphen aan den Rijn","Arn":"Arnemuiden","Asa":"Amsterdam Amstel","Asb":"Amsterdam Bijlmer ArenA","Asd":'Amsterdam Centraal',
+    "Apn":"Alphen aan den Rijn","Arn":"Arnemuiden","Asa":"Amsterdam Amstel","Asb":"Amsterdam Bijlmer ArenA","Asd":'Amsterdam Centraal', "Asd":'Amsterdam',
     "Asdl":'Amsterdam Lelylaan',"Asdm":'Amsterdam Muiderpoort',
     "Asdz":'Amsterdam Zuid',"Ashd":'Amsterdam Holendrecht',"Asn":'Assen',"Ass":'Amsterdam Sloterdijk',"Assp":'Amsterdam Science Park',"Atn":'Aalten',"Avat":'Amersfoort Vathorst',"Bd":'Breda',"Bde":'Bunde',
     "Bdg":'Bodegraven',"Bdm":'Bedum',"Bdpb":'Breda-Prinsenbeek',"Bet":'Best',"Bf":'Baflo',"Bgn":'Bergen op Zoom',
@@ -130,7 +384,7 @@ def webhook():
     'Gdk':'Geerdijk','Gdm':'Geldermalsen','Gdr':'Gaanderen','Gerp':'Groningen  Europapark','Gk':'Grijpskerk','Gln':'Geleen Oost',
     'Gn':'Groningen','Gnd':'Hardinxveld-Giessendam','Gnn':'Groningen Noord','Go':'Goor',
     'Gp':'Geldrop','Gr':'Gorinchem','Gs':'Goes',
-    'Gv':'Den Haag HS','Gvc':'Den Haag Centraal','Gvmv':'Den Haag Mariahoeve','Gvmw':'Den Haag Moerwijk','Gw':'Grou-Jirnsum',
+    'Gv':'Den Haag HS','Gvc':'Den Haag Centraal', 'Gvmv':'Den Haag Mariahoeve','Gvmw':'Den Haag Moerwijk','Gw':'Grou-Jirnsum',
     'Gz':'Gilze-Rijen','Had':'Heemstede-Aerdenhout','Hb':'Hoensbroek','Hd':'Harderwijk','Hdb':'Hardenberg',
     'Hde':"'t Harde",'Hdg':'Hurdegaryp','Hdr':'Den Helder','Hdrz':'Den Helder Zuid','Hfd':'Hoofddorp',
     'Hgl':'Hengelo','Hglg':'Hengelo Gezondheidspark','Hglo':'Hengelo Oost','Hgv':'Hoogeveen','Hgz':'Hoogezand-Sappemeer','Hil':'Hillegom',
@@ -216,11 +470,13 @@ def webhook():
     except Exception as e:
         print("[Errno {0}] {1}".format(e.errno, e.strerror))
 
-  # new function
-  elif query_result.get('action') == 'ns.prijs':
+   #---------------------------------------------------------------------#
+   # Context to second class ticket
+
+  elif query_result.get('action') == 'ns.prijsklasse2':
     
-    num1 = (query_result.get('parameters').get('geo-city'))
-    num2 = (query_result.get('parameters').get('geo-city1'))
+    num1 = (query_result.get('parameters').get('klasseprijsgeo-city'))
+    num2 = (query_result.get('parameters').get('klasseprijsgeo-city1'))
     
     import http.client, urllib.request, urllib.parse, urllib.error, base64
 
@@ -251,19 +507,167 @@ def webhook():
       start1 = data.find('"FIRST","discountType":"NONE","productType":"SINGLE_FARE","price":') + 66
       end1 = data.find(',"supplements":{}},{"classType":"SECOND"') 
       price1 = data[start1:end1] # price single fare ticket first class
-
+      price2 = int(price2)
       
       single_ticket = round((int(price2)/100),1) # single fare ticket second class
       single_ticket40 = round(((int(price2)/100)*0.6),1) # ticket with discount second class
       return_ticket = round(((int(price2)/100)*2),1) # return ticket price second class
     
       
-      fulfillmentText = "De prijs voor een enkeltje in klas 2 van " +num1+ " naar " +num2+ " kost " + str(single_ticket) +" euro." + " een enkeltje met 40 procent korting kost " + str(single_ticket40) +" euro " + ".en een retourtje in klas 2 kost " + str(return_ticket) + " euro"
+      fulfillmentText = "De prijs voor een enkeltje in klas 2 van " +num1+ " naar " +num2+ " kost " + str(single_ticket) +" euro," + " een enkeltje met 40 procent korting kost " + str(single_ticket40) +" euro " + ",en een retourtje in klas 2 kost " + str(return_ticket) + " euro."
+
+
+    except Exception as e:
+         print("[Errno {0}] {1}".format(e.errno, e.strerror))
+  
+
+   #---------------------------------------------------------------------#
+   # Context to second class ticket 2.0
+
+  elif query_result.get('action') == 'NS.2eKlas-2.0':
+    
+    num1 = (query_result.get('parameters').get('station1'))
+    num2 = (query_result.get('parameters').get('station2'))
+    
+    import http.client, urllib.request, urllib.parse, urllib.error, base64
+
+    headers = {
+    # request headers
+    'Ocp-Apim-Subscription-Key': '20478f19bbcc411b8e06d306ba760129',
+    }
+
+    params = urllib.parse.urlencode({
+    # request parameters
+    'fromStation': num1,
+    'toStation': num2,
+    })
+
+    try:
+      conn = http.client.HTTPSConnection('gateway.apiportal.ns.nl')
+      conn.request("GET", "/rio-price-information-api/prices?%s" % params, "{body}", headers)
+      response = conn.getresponse()
+      data = response.read()
+    
+      conn.close()
+      data = str(data)
+      start2 = data.find('"SINGLE_FARE","price":') + 22 # find price single fare ticket second class
+      end2 = data.find(',"supplements"', start2)
+      price2 = data[start2:end2]
+    
+      # find single fare price first class
+      start1 = data.find('"FIRST","discountType":"NONE","productType":"SINGLE_FARE","price":') + 66
+      end1 = data.find(',"supplements":{}},{"classType":"SECOND"') 
+      price1 = data[start1:end1] # price single fare ticket first class
+      price2 = int(price2)
+      
+      single_ticket = round((int(price2)/100),1) # single fare ticket second class
+      single_ticket40 = round(((int(price2)/100)*0.6),1) # ticket with discount second class
+      return_ticket = round(((int(price2)/100)*2),1) # return ticket price second class
+    
+      
+      fulfillmentText = "De prijs voor een enkeltje in klas 2 van " +num1+ " naar " +num2+ " kost " + str(single_ticket) +" euro," + " een enkeltje met 40 procent korting kost " + str(single_ticket40) +" euro " + ",en een retourtje in klas 2 kost " + str(return_ticket) + " euro."
+
+
+    except Exception as e:
+         print("[Errno {0}] {1}".format(e.errno, e.strerror))
+ 
+   #---------------------------------------------------------------------#
+   # Context to first class ticket
+
+  elif query_result.get('action') == 'ns.prijsklasse1':
+    
+    num1 = (query_result.get('parameters').get('klasseprijsgeo-city'))
+    num2 = (query_result.get('parameters').get('klasseprijsgeo-city1'))
+    
+    import http.client, urllib.request, urllib.parse, urllib.error, base64
+
+    headers = {
+    # request headers
+    'Ocp-Apim-Subscription-Key': '20478f19bbcc411b8e06d306ba760129',
+    }
+
+    params = urllib.parse.urlencode({
+    # request parameters
+    'fromStation': num1,
+    'toStation': num2,
+    })
+
+    try:
+      conn = http.client.HTTPSConnection('gateway.apiportal.ns.nl')
+      conn.request("GET", "/rio-price-information-api/prices?%s" % params, "{body}", headers)
+      response = conn.getresponse()
+      data = response.read()
+    
+      conn.close()
+      data = str(data)
+    
+    
+      # find single fare price first class
+      start1 = data.find('"classType":"FIRST","discountType":"NONE","productType":"SINGLE_FARE","price":') + 78
+      end1 = data.find(',"supplements"', start1) 
+      price1 = data[start1:end1] # price single fare ticket first class
+     
+      
+      single_ticket = round((int(price1)/100),1) # single fare ticket second class
+      single_ticket40 = round(((int(price1)/100)*0.6),1) # ticket with discount second class
+      return_ticket = round(((int(price1)/100)*2),1) # return ticket price second class
+    
+      
+      fulfillmentText = "De prijs voor een enkeltje in klas 1 van " +num1+ " naar " +num2+ " kost " + str(single_ticket) +" euro," + " een enkeltje met 40 procent korting kost " + str(single_ticket40) +" euro " + ",en een retourtje in klas 1 kost " + str(return_ticket) + " euro."
 
 
     except Exception as e:
          print("[Errno {0}] {1}".format(e.errno, e.strerror))
 
+  #---------------------------------------------------------------------#
+   # Context to firt class ticket 2.0
+
+  elif query_result.get('action') == 'ns.1eklas2.0':
+    
+    num1 = (query_result.get('parameters').get('station1'))
+    num2 = (query_result.get('parameters').get('station2'))
+    
+    import http.client, urllib.request, urllib.parse, urllib.error, base64
+
+    headers = {
+    # request headers
+    'Ocp-Apim-Subscription-Key': '20478f19bbcc411b8e06d306ba760129',
+    }
+
+    params = urllib.parse.urlencode({
+    # request parameters
+    'fromStation': num1,
+    'toStation': num2,
+    })
+
+    try:
+      conn = http.client.HTTPSConnection('gateway.apiportal.ns.nl')
+      conn.request("GET", "/rio-price-information-api/prices?%s" % params, "{body}", headers)
+      response = conn.getresponse()
+      data = response.read()
+    
+      conn.close()
+      data = str(data)
+      start2 = data.find('"SINGLE_FARE","price":') + 22 # find price single fare ticket second class
+      end2 = data.find(',"supplements"', start2)
+      price2 = data[start2:end2]
+    
+      # find single fare price first class
+      start1 = data.find('"FIRST","discountType":"NONE","productType":"SINGLE_FARE","price":') + 66
+      end1 = data.find(',"supplements":null},{"classType":"SECOND","discountType":"FORTY_PERCENT",') 
+      price1 = data[start1:end1] # price single fare ticket first class
+      price1 = int(price1)
+      
+      single_ticket = round((int(price1)/100),1) # single fare ticket second class
+      single_ticket40 = round(((int(price1)/100)*0.6),1) # ticket with discount second class
+      return_ticket = round(((int(price1)/100)*2),1) # return ticket price second class
+    
+      
+      fulfillmentText = "De prijs voor een enkeltje in klas 1 van " +num1+ " naar " +num2+ " kost " + str(single_ticket) +" euro," + " een enkeltje met 40 procent korting kost " + str(single_ticket40) +" euro " + ",en een retourtje in klas 1 kost " + str(return_ticket) + " euro."
+
+
+    except Exception as e:
+         print("[Errno {0}] {1}".format(e.errno, e.strerror))
   
   return {
         "fulfillmentText": fulfillmentText,
